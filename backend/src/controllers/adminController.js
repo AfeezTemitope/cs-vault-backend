@@ -9,6 +9,15 @@ const createLecturer = async (req, res) => {
   if (!full_name || !email || !matric_number)
     return res.status(400).json({ error: 'full_name, email, matric_number are required' });
 
+  // Check if already exists
+  const { data: existing } = await supabase
+    .from('users')
+    .select('id')
+    .eq('matric_number', matric_number.trim().toUpperCase())
+    .single();
+
+  if (existing) return res.status(400).json({ error: 'A user with this matric number already exists' });
+
   const password = generatePassword();
   const hash = await bcrypt.hash(password, 10);
 
@@ -25,9 +34,13 @@ const createLecturer = async (req, res) => {
 
   if (error) return res.status(400).json({ error: error.message });
 
-  await sendWelcomeEmail({ email, fullName: full_name, matricNumber: matric_number, password, role: 'lecturer' });
+  // Non-blocking email — never fails the request
+  sendWelcomeEmail({ email, fullName: full_name, matricNumber: matric_number, password, role: 'lecturer' });
 
-  res.status(201).json({ message: 'Lecturer created', user: { id: data.id, full_name, email, matric_number } });
+  res.status(201).json({
+    message: 'Lecturer created successfully',
+    user: { id: data.id, full_name, email, matric_number }
+  });
 };
 
 const getLecturers = async (req, res) => {

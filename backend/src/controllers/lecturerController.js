@@ -45,7 +45,7 @@ const registerStudent = async (req, res) => {
   if (!full_name || !email || !matric_number || !course_id)
     return res.status(400).json({ error: 'All fields required' });
 
-  // Check if student exists
+  // Check if student already exists
   let { data: existing } = await supabase
     .from('users')
     .select('*')
@@ -70,19 +70,21 @@ const registerStudent = async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
     studentId = newStudent.id;
-    await sendWelcomeEmail({ email, fullName: full_name, matricNumber: matric_number, password, role: 'student' });
+
+    // Send email AFTER student is saved — non-blocking, never fails registration
+    sendWelcomeEmail({ email, fullName: full_name, matricNumber: matric_number, password, role: 'student' });
+
   } else {
     studentId = existing.id;
   }
 
   // Enroll in course
-  const { error: enrollError } = await supabase.from('enrollments').upsert({
-    id: uuidv4(),
-    student_id: studentId,
-    course_id
-  });
+  const { error: enrollError } = await supabase
+    .from('enrollments')
+    .upsert({ id: uuidv4(), student_id: studentId, course_id }, { onConflict: 'student_id,course_id' });
 
   if (enrollError) return res.status(400).json({ error: enrollError.message });
+
   res.status(201).json({ message: 'Student registered and enrolled successfully' });
 };
 
@@ -93,9 +95,9 @@ const bulkRegisterStudents = async (req, res) => {
 
   const results = [];
   const errors = [];
+  const rows = [];
 
   const stream = Readable.from(req.file.buffer.toString());
-  const rows = [];
 
   await new Promise((resolve, reject) => {
     stream.pipe(csv())
@@ -119,10 +121,11 @@ const bulkRegisterStudents = async (req, res) => {
         .single();
 
       let studentId;
+
       if (!existing) {
         const password = generatePassword();
         const hash = await bcrypt.hash(password, 10);
-        const { data: newStudent } = await supabase.from('users').insert({
+        const { data: newStudent, error } = await supabase.from('users').insert({
           id: uuidv4(),
           full_name,
           email,
@@ -131,13 +134,22 @@ const bulkRegisterStudents = async (req, res) => {
           role: 'student',
           must_change_password: true
         }).select().single();
+
+        if (error) throw new Error(error.message);
         studentId = newStudent.id;
-        await sendWelcomeEmail({ email, fullName: full_name, matricNumber: matric_number, password, role: 'student' });
+
+        // Non-blocking email
+        sendWelcomeEmail({ email, fullName: full_name, matricNumber: matric_number, password, role: 'student' });
+
       } else {
         studentId = existing.id;
       }
 
-      await supabase.from('enrollments').upsert({ id: uuidv4(), student_id: studentId, course_id });
+      await supabase.from('enrollments').upsert(
+        { id: uuidv4(), student_id: studentId, course_id },
+        { onConflict: 'student_id,course_id' }
+      );
+
       results.push({ matric_number, status: 'success' });
     } catch (err) {
       errors.push({ matric_number, reason: err.message });
