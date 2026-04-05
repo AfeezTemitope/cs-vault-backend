@@ -1,6 +1,8 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
+const { sendWelcomeEmail } = require('../services/emailService');
+const generatePassword = require('../utils/generatePassword');
 require('dotenv').config();
 
 const login = async (req, res) => {
@@ -60,6 +62,43 @@ const changePassword = async (req, res) => {
   res.json({ message: 'Password changed successfully' });
 };
 
+const forgotPassword = async (req, res) => {
+  const { matric_number } = req.body;
+  if (!matric_number)
+    return res.status(400).json({ error: 'Matric number is required' });
+
+  const { data: user } = await supabase
+    .from('users')
+    .select('*')
+    .eq('matric_number', matric_number.trim().toUpperCase())
+    .single();
+
+  // Always return success even if user not found — prevents account enumeration
+  if (!user) {
+    return res.json({ message: 'If this account exists, a new password has been sent to the registered email.' });
+  }
+
+  const newPassword = generatePassword();
+  const hash = await bcrypt.hash(newPassword, 10);
+
+  await supabase
+    .from('users')
+    .update({ password_hash: hash, must_change_password: true })
+    .eq('id', user.id);
+
+  // Send new password via email — non-blocking
+  sendWelcomeEmail({
+    email: user.email,
+    fullName: user.full_name,
+    matricNumber: user.matric_number,
+    password: newPassword,
+    role: user.role,
+    isReset: true,
+  });
+
+  res.json({ message: 'If this account exists, a new password has been sent to the registered email.' });
+};
+
 const getMe = async (req, res) => {
   const { data: user } = await supabase
     .from('users')
@@ -70,4 +109,4 @@ const getMe = async (req, res) => {
   res.json(user);
 };
 
-module.exports = { login, changePassword, getMe };
+module.exports = { login, changePassword, forgotPassword, getMe };
