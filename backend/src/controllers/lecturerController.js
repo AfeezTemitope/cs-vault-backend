@@ -6,7 +6,8 @@ const generatePassword = require('../utils/generatePassword');
 
 const getMyCourses = async (req, res) => {
   const { data, error } = await supabase
-    .from('courses').select('*').eq('lecturer_id', req.user.id)
+    .from('courses').select('*')
+    .eq('lecturer_id', req.user.id)
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
@@ -14,11 +15,16 @@ const getMyCourses = async (req, res) => {
 
 const getCourseDetails = async (req, res) => {
   const { courseId } = req.params;
-  const { data: course } = await supabase.from('courses').select('*').eq('id', courseId).single();
-  const { data: enrollments } = await supabase.from('enrollments')
-    .select('*, users(id, full_name, email, matric_number)').eq('course_id', courseId);
-  const { data: projects } = await supabase.from('projects')
-    .select('*, users(full_name, matric_number)').eq('course_id', courseId)
+  const { data: course } = await supabase
+    .from('courses').select('*').eq('id', courseId).single();
+  const { data: enrollments } = await supabase
+    .from('enrollments')
+    .select('*, users(id, full_name, email, matric_number)')
+    .eq('course_id', courseId);
+  const { data: projects } = await supabase
+    .from('projects')
+    .select('*, users(full_name, matric_number)')
+    .eq('course_id', courseId)
     .order('created_at', { ascending: false });
   res.json({ course, students: enrollments?.map(e => e.users), projects });
 };
@@ -28,8 +34,10 @@ const registerStudent = async (req, res) => {
   if (!full_name || !email || !matric_number)
     return res.status(400).json({ error: 'All fields required' });
 
-  let { data: existing } = await supabase.from('users').select('*')
-    .eq('matric_number', matric_number.trim().toUpperCase()).single();
+  let { data: existing } = await supabase
+    .from('users').select('*')
+    .eq('matric_number', matric_number.trim().toUpperCase())
+    .single();
 
   let studentId;
 
@@ -48,9 +56,7 @@ const registerStudent = async (req, res) => {
     studentId = existing.id;
   }
 
-  // Enroll in selected courses (default to lecturer's course if none selected)
-  const coursesToEnroll = course_ids.length > 0 ? course_ids : [];
-  for (const course_id of coursesToEnroll) {
+  for (const course_id of course_ids) {
     await supabase.from('enrollments').upsert(
       { id: uuidv4(), student_id: studentId, course_id },
       { onConflict: 'student_id,course_id' }
@@ -64,10 +70,12 @@ const gradeProject = async (req, res) => {
   const { projectId } = req.params;
   const { grade } = req.body;
   const validGrades = ['A', 'B', 'C', 'D', 'E', 'F'];
-  if (!validGrades.includes(grade)) return res.status(400).json({ error: 'Invalid grade' });
+  if (!validGrades.includes(grade))
+    return res.status(400).json({ error: 'Grade must be A, B, C, D, E or F' });
 
   const { data, error } = await supabase.from('grades').upsert({
-    id: uuidv4(), project_id: projectId, lecturer_id: req.user.id, grade
+    id: uuidv4(), project_id: projectId,
+    lecturer_id: req.user.id, grade
   }, { onConflict: 'project_id' }).select().single();
 
   if (error) return res.status(400).json({ error: error.message });
@@ -76,7 +84,8 @@ const gradeProject = async (req, res) => {
 
 const getAllProjects = async (req, res) => {
   const { course_id, session, search } = req.query;
-  let query = supabase.from('projects')
+  let query = supabase
+    .from('projects')
     .select('*, users(full_name, matric_number), courses(title, course_code), grades(grade)')
     .order('created_at', { ascending: false });
 
