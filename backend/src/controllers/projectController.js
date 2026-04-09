@@ -2,7 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const supabase = require('../config/supabase');
 
 const uploadProject = async (req, res) => {
-  const { title, description, course_id, session, github_link } = req.body;
+  const { title, description, course_id, session, github_link, year, supervisor } = req.body;
   const studentId = req.user.id;
 
   if (!title || !course_id || !session)
@@ -11,7 +11,6 @@ const uploadProject = async (req, res) => {
   let pdf_url = null;
   let zip_url = null;
 
-  // Upload files to Supabase Storage
   for (const file of req.files || []) {
     const ext = file.mimetype === 'application/pdf' ? 'pdf' : 'zip';
     const path = `projects/${uuidv4()}.${ext}`;
@@ -33,13 +32,53 @@ const uploadProject = async (req, res) => {
     course_id,
     student_id: studentId,
     session,
+    year: year || new Date().getFullYear().toString(),
+    supervisor: supervisor || null,
     github_link: github_link || null,
     pdf_url,
-    zip_url
+    zip_url,
+    status: 'pending',
+    download_count: 0,
   }).select().single();
 
   if (error) return res.status(400).json({ error: error.message });
   res.status(201).json(data);
+};
+
+const approveProject = async (req, res) => {
+  const { projectId } = req.params;
+  const { error } = await supabase.from('projects').update({ status: 'approved' }).eq('id', projectId);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ message: 'Project approved' });
+};
+
+const rejectProject = async (req, res) => {
+  const { projectId } = req.params;
+  const { error } = await supabase.from('projects').update({ status: 'rejected' }).eq('id', projectId);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ message: 'Project rejected' });
+};
+
+const trackDownload = async (req, res) => {
+  const { projectId } = req.params;
+  await supabase.rpc('increment_download', { project_id: projectId }).catch(() => {
+    // fallback if RPC doesn't exist
+    supabase.from('projects').select('download_count').eq('id', projectId).single()
+      .then(({ data }) => {
+        supabase.from('projects').update({ download_count: (data?.download_count || 0) + 1 }).eq('id', projectId);
+      });
+  });
+  res.json({ message: 'Download tracked' });
+};
+
+const getPublicProjects = async (req, res) => {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*, users(full_name, matric_number), courses(title, course_code), grades(grade)')
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 };
 
 const getProject = async (req, res) => {
@@ -49,7 +88,6 @@ const getProject = async (req, res) => {
     .select('*, users(full_name, matric_number, email), courses(title, course_code), grades(grade, users(full_name)), comments(*, users(full_name, role))')
     .eq('id', projectId)
     .single();
-
   if (error) return res.status(404).json({ error: 'Project not found' });
   res.json(data);
 };
@@ -58,12 +96,8 @@ const getStudentProjects = async (req, res) => {
   const studentId = req.user.id;
   const { course_id, session } = req.query;
 
-  // Get enrolled courses
   const { data: enrollments } = await supabase
-    .from('enrollments')
-    .select('course_id')
-    .eq('student_id', studentId);
-
+    .from('enrollments').select('course_id').eq('student_id', studentId);
   const courseIds = enrollments?.map(e => e.course_id) || [];
 
   let query = supabase
@@ -85,10 +119,7 @@ const searchProjects = async (req, res) => {
   const studentId = req.user.id;
 
   const { data: enrollments } = await supabase
-    .from('enrollments')
-    .select('course_id')
-    .eq('student_id', studentId);
-
+    .from('enrollments').select('course_id').eq('student_id', studentId);
   const courseIds = enrollments?.map(e => e.course_id) || [];
 
   const { data, error } = await supabase
@@ -102,4 +133,4 @@ const searchProjects = async (req, res) => {
   res.json(data);
 };
 
-module.exports = { uploadProject, getProject, getStudentProjects, searchProjects };
+module.exports = { uploadProject, approveProject, rejectProject, trackDownload, getPublicProjects, getProject, getStudentProjects, searchProjects };
