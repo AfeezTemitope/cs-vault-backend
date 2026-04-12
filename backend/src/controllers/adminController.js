@@ -134,9 +134,30 @@ const updateStudentCourses = async (req, res) => {
 
 const deleteStudent = async (req, res) => {
   const { id } = req.params;
-  const { error } = await supabase.from('users').delete().eq('id', id).eq('role', 'student');
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ message: 'Student removed' });
+
+  // Get user email first
+  const { data: user } = await supabase
+    .from('users')
+    .select('email')
+    .eq('id', id)
+    .single();
+
+  // Delete from users table
+  await supabase.from('users').delete().eq('id', id);
+
+  // Delete from enrollments
+  await supabase.from('enrollments').delete().eq('student_id', id);
+
+  // Delete from Supabase Auth
+  if (user?.email) {
+    const { data: authUsers } = await supabase.auth.admin.listUsers();
+    const authUser = authUsers?.users?.find(u => u.email === user.email);
+    if (authUser) {
+      await supabase.auth.admin.deleteUser(authUser.id);
+    }
+  }
+
+  res.json({ message: 'Student removed completely' });
 };
 
 const getAllStudents = async (req, res) => {
