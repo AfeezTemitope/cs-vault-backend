@@ -134,3 +134,13 @@ const searchProjects = async (req, res) => {
 };
 
 module.exports = { uploadProject, approveProject, rejectProject, trackDownload, getPublicProjects, getProject, getStudentProjects, searchProjects };
+
+const getApprovedProjects = async (req, res) => {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*, users(full_name, matric_number), courses(title, course_code), grades(grade)')
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+};
