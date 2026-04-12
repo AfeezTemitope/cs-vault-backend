@@ -3,12 +3,17 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const {
-  uploadProject, getProject, getStudentProjects,
-  searchProjects, getApprovedProjects, trackDownload
+  uploadProject,
+  getProject,
+  getStudentProjects,
+  searchProjects,
+  getApprovedProjects,
+  trackDownload
 } = require('../controllers/projectController');
 const supabase = require('../config/supabase');
 
-// Public courses endpoint — for lecturer register page
+// Public — no auth needed
+// Returns all courses for lecturer register page
 router.get('/courses', async (req, res) => {
   const { data, error } = await supabase
     .from('courses')
@@ -18,7 +23,7 @@ router.get('/courses', async (req, res) => {
   res.json(data);
 });
 
-// Auth required below
+// All routes below require authentication
 router.use(authenticate);
 
 router.post('/', upload.array('files', 2), uploadProject);

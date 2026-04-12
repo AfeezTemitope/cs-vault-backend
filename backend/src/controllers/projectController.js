@@ -47,28 +47,48 @@ const uploadProject = async (req, res) => {
 
 const approveProject = async (req, res) => {
   const { projectId } = req.params;
-  const { error } = await supabase.from('projects').update({ status: 'approved' }).eq('id', projectId);
+  const { error } = await supabase
+    .from('projects')
+    .update({ status: 'approved' })
+    .eq('id', projectId);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ message: 'Project approved' });
 };
 
 const rejectProject = async (req, res) => {
   const { projectId } = req.params;
-  const { error } = await supabase.from('projects').update({ status: 'rejected' }).eq('id', projectId);
+  const { error } = await supabase
+    .from('projects')
+    .update({ status: 'rejected' })
+    .eq('id', projectId);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ message: 'Project rejected' });
 };
 
 const trackDownload = async (req, res) => {
   const { projectId } = req.params;
-  await supabase.rpc('increment_download', { project_id: projectId }).catch(() => {
-    // fallback if RPC doesn't exist
-    supabase.from('projects').select('download_count').eq('id', projectId).single()
-      .then(({ data }) => {
-        supabase.from('projects').update({ download_count: (data?.download_count || 0) + 1 }).eq('id', projectId);
-      });
-  });
+  const { data: project } = await supabase
+    .from('projects')
+    .select('download_count')
+    .eq('id', projectId)
+    .single();
+
+  await supabase
+    .from('projects')
+    .update({ download_count: (project?.download_count || 0) + 1 })
+    .eq('id', projectId);
+
   res.json({ message: 'Download tracked' });
+};
+
+const getApprovedProjects = async (req, res) => {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*, users(full_name, matric_number), courses(title, course_code), grades(grade)')
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 };
 
 const getPublicProjects = async (req, res) => {
@@ -97,7 +117,10 @@ const getStudentProjects = async (req, res) => {
   const { course_id, session } = req.query;
 
   const { data: enrollments } = await supabase
-    .from('enrollments').select('course_id').eq('student_id', studentId);
+    .from('enrollments')
+    .select('course_id')
+    .eq('student_id', studentId);
+
   const courseIds = enrollments?.map(e => e.course_id) || [];
 
   let query = supabase
@@ -119,7 +142,10 @@ const searchProjects = async (req, res) => {
   const studentId = req.user.id;
 
   const { data: enrollments } = await supabase
-    .from('enrollments').select('course_id').eq('student_id', studentId);
+    .from('enrollments')
+    .select('course_id')
+    .eq('student_id', studentId);
+
   const courseIds = enrollments?.map(e => e.course_id) || [];
 
   const { data, error } = await supabase
@@ -133,14 +159,14 @@ const searchProjects = async (req, res) => {
   res.json(data);
 };
 
-module.exports = { uploadProject, approveProject, rejectProject, trackDownload, getPublicProjects, getProject, getStudentProjects, searchProjects };
-
-const getApprovedProjects = async (req, res) => {
-  const { data, error } = await supabase
-    .from('projects')
-    .select('*, users(full_name, matric_number), courses(title, course_code), grades(grade)')
-    .eq('status', 'approved')
-    .order('created_at', { ascending: false });
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+module.exports = {
+  uploadProject,
+  approveProject,
+  rejectProject,
+  trackDownload,
+  getApprovedProjects,
+  getPublicProjects,
+  getProject,
+  getStudentProjects,
+  searchProjects,
 };
